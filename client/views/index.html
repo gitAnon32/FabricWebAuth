@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chaincode de Teste - Benchmark</title>
+  <style>
+    :root {
+      --primary: #1e7a35;
+      --primary-dark: #145427;
+      --bg: #f4fbf6;
+      --card: #ffffff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: var(--bg);
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .container {
+      background: var(--card);
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      width: 95%;
+      max-width: 800px;
+      margin: 20px 0;
+    }
+    h2 { color: var(--primary-dark); margin-bottom: 20px; }
+    h3 { color: var(--primary-dark); margin: 16px 0 10px; padding-bottom: 6px; border-bottom: 1px solid #d9edde; }
+    label { display: block; margin-bottom: 4px; font-weight: bold; font-size: 0.9rem; }
+    input[type="text"], input[type="number"], textarea, select {
+      width: 100%; padding: 9px; border: 1px solid #ccc; border-radius: 8px; font-size: 0.95rem; font-family: inherit;
+    }
+    textarea { font-family: 'Consolas', 'Courier New', monospace; resize: vertical; min-height: 80px; }
+    .form-group { margin-bottom: 14px; }
+    .tabs { display: flex; border-bottom: 2px solid #ddd; margin-bottom: 20px; }
+    .tab { padding: 10px 20px; cursor: pointer; font-weight: bold; color: #666; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+    .tab:hover { color: var(--primary); background: #f0f9f2; }
+    .tab.active { color: var(--primary-dark); border-bottom-color: var(--primary); background: #f0f9f2; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+    .hidden { display: none !important; }
+    button {
+      padding: 10px 18px; border: none; border-radius: 8px; cursor: pointer; background: var(--primary); color: white;
+      font-size: 0.95rem; font-weight: bold; transition: background 0.2s;
+    }
+    button:hover { background: var(--primary-dark); }
+    button:disabled { background: #aaa; cursor: not-allowed; }
+    .btn-outline { background: #fff; color: var(--primary); border: 1px solid var(--primary); }
+    .btn-outline:hover { background: #e8f5ec; }
+    .button-group { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .result-box {
+      margin-top: 16px; padding: 12px; border: 1px solid #ccc; border-radius: 8px; background: #f9f9f9;
+      max-height: 300px; overflow-y: auto; font-size: 0.88rem; font-family: 'Consolas', 'Courier New', monospace;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .loading-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.6);
+      backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999;
+    }
+    .loading-box {
+      background: white; border-radius: 10px; border: 1px solid #ccc; padding: 30px 40px; text-align: center; min-width: 220px;
+    }
+    .spinner {
+      margin: 0 auto 16px auto; width: 38px; height: 38px; border: 5px solid #ccc; border-top-color: var(--primary);
+      border-radius: 50%; animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #userInfo { font-size: 0.9rem; color: #444; margin-bottom: 10px; }
+    .mode-selector { display: flex; gap: 20px; margin-bottom: 14px; align-items: center; }
+    .loop-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .loop-row input[type="number"] { width: 80px; }
+    .loop-hint { font-size: 0.82rem; color: #666; margin-left: 5px; }
+    hr { border: none; border-top: 1px solid #ddd; margin: 14px 0; }
+  </style>
+</head>
+<body>
+
+<div id="loadingOverlay" class="loading-overlay" style="display:none">
+  <div class="loading-box">
+    <div class="spinner"></div>
+    <p>Processando, aguarde...</p>
+  </div>
+</div>
+
+<div class="container">
+  <h2>Chaincode de Teste - Benchmark</h2>
+
+  <div id="userInfo"></div>
+  <button class="btn-outline" style="width:auto;padding:6px 14px;font-size:0.88rem" onclick="logout()">Logout</button>
+
+  <hr>
+
+  <!-- Diagnóstico & Controle de Timing -->
+  <div class="form-group">
+    <h3>Diagnóstico</h3>
+    <button onclick="viewStoredPublicKey()">Ver Chave Pública Armazenada</button>
+    <button onclick="testSignature()" style="margin-left:10px">Testar Assinatura Atual</button>
+    <div style="margin-top:8px">
+      <button onclick="enableTiming()">Ativar Timing</button>
+      <button onclick="disableTiming()" style="margin-left:10px">Desativar Timing</button>
+    </div>
+    <div id="diagnosticResult" class="result-box hidden"></div>
+  </div>
+
+  <hr>
+
+  <!-- Armazenar Chave Pública -->
+  <div class="form-group" id="storePubKeySection">
+    <h3>Armazenar Chave Pública</h3>
+    <label for="pubKeyFile">Arquivo da chave pública (.pem)</label>
+    <input type="file" id="pubKeyFile" accept=".pem">
+    <button onclick="handleStorePubKey()">Armazenar Chave Pública</button>
+    <div id="storePubKeyResult" class="result-box hidden"></div>
+  </div>
+
+  <hr>
+
+  <!-- Seletor de modo de assinatura -->
+  <div class="mode-selector">
+    <strong>Modo de operação:</strong>
+    <label><input type="radio" name="mode" value="unsigned" checked> Sem assinatura (Store)</label>
+    <label><input type="radio" name="mode" value="signed"> Verificação no chaincode (StoreSigned)</label>
+    <label><input type="radio" name="mode" value="offline"> Offline (assinatura externa, Store)</label>
+  </div>
+
+  <!-- Chave privada (necessária para os modos signed e offline) -->
+  <div class="form-group" id="privateKeyGroup">
+    <label for="privateKeyFile">Chave privada (.pem)</label>
+    <input type="file" id="privateKeyFile" accept=".pem">
+  </div>
+
+  <!-- Campos comuns -->
+  <div class="form-group">
+    <label for="storageKey">Chave (key) base</label>
+    <input type="text" id="storageKey" placeholder="Ex: chaveDeTeste (no loop sera chaveDeTeste_0, chaveDeTeste_1, ...)">
+  </div>
+  <div class="form-group">
+    <label for="storageValue">Valor (value)</label>
+    <textarea id="storageValue" placeholder="Mensagem a ser armazenada. Se vazio, sera gerada automaticamente no loop."></textarea>
+  </div>
+
+  <!-- Loop -->
+  <div class="loop-row">
+    <label><input type="checkbox" id="loopEnabled"> Modo loop (benchmark)</label>
+    <label for="loopCount">Iterações:</label>
+    <input type="number" id="loopCount" value="5" min="1" max="1000" disabled>
+    <span class="loop-hint">Chave terá sufixo numérico; valor terá número da iteração e timestamp.</span>
+  </div>
+
+  <div class="button-group">
+    <button id="executeBtn" onclick="handleExecute()">Executar</button>
+    <button class="btn-outline" onclick="clearResult()">Limpar Resultado</button>
+  </div>
+
+  <div id="storeResult" class="result-box hidden"></div>
+  <div id="csvDownloadArea" style="margin-top:10px;"></div>
+</div>
+
+<script type="module">
+  import { signDigest } from '/resources/sign.js';
+
+  const CC_MAIN = 'teste_chaincode';
+
+  // ---------- Auth ----------
+  function getToken() { return localStorage.getItem('token'); }
+  function getUsername() {
+    const token = getToken();
+    if (!token) return null;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.sub || payload.username;
+    } catch { return null; }
+  }
+  function checkAuth() {
+    if (!getToken()) { alert('Você precisa estar logado.'); window.location.href = '/login'; return false; }
+    return true;
+  }
+  window.logout = function () {
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+  };
+  (function showUser() {
+    const username = getUsername();
+    if (!username) { window.location.href = '/login'; return; }
+    document.getElementById('userInfo').innerHTML = `Logado como: <b>${username}</b>`;
+  })();
+
+  // ---------- Loading ----------
+  const loadingOverlay = document.getElementById('loadingOverlay');
+  function setLoading(active) { loadingOverlay.style.display = active ? 'flex' : 'none'; }
+
+  // ---------- Utilidades ----------
+  function base64ToUint8Array(b64) {
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return arr;
+  }
+
+  function rawSignatureToDER(rawSig) {
+    if (rawSig.length !== 64) throw new Error('Assinatura RAW deve ter 64 bytes');
+    const r = rawSig.slice(0, 32);
+    const s = rawSig.slice(32, 64);
+    function toDerInteger(buf) {
+      let start = 0;
+      while (start < buf.length && buf[start] === 0) start++;
+      if (start === buf.length) start--;
+      let val = buf.slice(start);
+      if (val[0] & 0x80) {
+        const tmp = new Uint8Array(val.length + 1);
+        tmp[0] = 0x00;
+        tmp.set(val, 1);
+        val = tmp;
+      }
+      return val;
+    }
+    const rVal = toDerInteger(r);
+    const sVal = toDerInteger(s);
+    const der = new Uint8Array(6 + rVal.length + sVal.length);
+    let pos = 0;
+    der[pos++] = 0x30;
+    der[pos++] = 4 + rVal.length + sVal.length;
+    der[pos++] = 0x02;
+    der[pos++] = rVal.length;
+    der.set(rVal, pos);
+    pos += rVal.length;
+    der[pos++] = 0x02;
+    der[pos++] = sVal.length;
+    der.set(sVal, pos);
+    return der;
+  }
+
+  function pemToArrayBuffer(pem) {
+    const b64 = pem.replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes.buffer;
+  }
+
+  async function importPrivateKey(pem) {
+    const keyData = pemToArrayBuffer(pem);
+    return crypto.subtle.importKey('pkcs8', keyData, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  }
+
+  async function signMessageDER(message, privateKeyPem) {
+    const key = await importPrivateKey(privateKeyPem);
+    const encoder = new TextEncoder();
+    const data = encoder.encode(message);
+    const rawSignature = await crypto.subtle.sign({ name: 'ECDSA', hash: { name: 'SHA-256' } }, key, data);
+    const derSignature = rawSignatureToDER(new Uint8Array(rawSignature));
+    return btoa(String.fromCharCode(...derSignature));
+  }
+
+  // ---------- CSV ----------
+  function downloadCSV(rows, mode) {
+    if (!rows.length) return;
+    const header = 'iteracao,frontend_ms,backend_ms,chaincode_ms,total_ms';
+    const lines = rows.map(r =>
+      `${r.iteracao},${r.frontend_ms.toFixed(6)},${r.backend_ms.toFixed(6)},${r.chaincode_ms.toFixed(6)},${r.total_ms.toFixed(6)}`
+    );
+    const csv = [header, ...lines].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `benchmark_${mode}_${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------- Diagnóstico ----------
+  async function viewStoredPublicKey() {
+    setLoading(true);
+    const resultDiv = document.getElementById('diagnosticResult');
+    try {
+      const username = getUsername();
+      const result = await fetchWithAuth('/query', { method: 'POST', body: JSON.stringify({ key: `pubkey~${username}` }) });
+      resultDiv.textContent = result.value || '(vazio)';
+      resultDiv.classList.remove('hidden');
+    } catch (err) {
+      resultDiv.textContent = `Erro: ${err.message}`;
+      resultDiv.classList.remove('hidden');
+    } finally { setLoading(false); }
+  }
+
+  async function testSignature() {
+    const privateKeyFile = document.getElementById('privateKeyFile').files[0];
+    const message = document.getElementById('storageValue').value.trim() || `Teste único - ${Date.now()}`;
+    if (!privateKeyFile) { alert('Selecione a chave privada primeiro.'); return; }
+
+    setLoading(true);
+    const resultDiv = document.getElementById('diagnosticResult');
+    try {
+      const pem = await privateKeyFile.text();
+      const signatureB64 = await signMessageDER(message, pem);
+      const verifyRes = await fetchWithAuth('/verify', { method: 'POST', body: JSON.stringify({ message, signature: signatureB64 }) });
+      resultDiv.textContent = `Assinatura testada com a chave armazenada:\nVálida: ${verifyRes.valid}`;
+      if (!verifyRes.valid) resultDiv.textContent += '\n\nChave pública armazenada não corresponde à chave privada.';
+      resultDiv.classList.remove('hidden');
+    } catch (err) {
+      resultDiv.textContent = `Erro: ${err.message}`;
+      resultDiv.classList.remove('hidden');
+    } finally { setLoading(false); }
+  }
+
+  // ---------- Controle manual de timing ----------
+  async function enableTiming() {
+    try {
+      await fetchWithAuth('/benchmark/start', { method: 'POST' });
+      alert('Timing ativado. As próximas transações retornarão elapsed_ms.');
+    } catch (err) {
+      alert('Erro ao ativar timing: ' + err.message);
+    }
+  }
+
+  async function disableTiming() {
+    try {
+      await fetchWithAuth('/benchmark/stop', { method: 'POST' });
+      alert('Timing desativado.');
+    } catch (err) {
+      alert('Erro ao desativar timing: ' + err.message);
+    }
+  }
+
+  // ---------- Execução principal ----------
+  async function handleExecute() {
+    const modeInput = document.querySelector('input[name="mode"]:checked');
+    if (!modeInput) {
+        alert('Nenhum modo de operação selecionado. Recarregue a página.');
+        return;
+    }
+    const mode = modeInput.value;
+    const keyBase = document.getElementById('storageKey').value.trim();
+    const valueBase = document.getElementById('storageValue').value.trim();
+    const loopEnabled = document.getElementById('loopEnabled').checked;
+    const loopCount = parseInt(document.getElementById('loopCount').value, 10) || 1;
+
+    if (!keyBase) { alert('Preencha a chave base.'); return; }
+    if ((mode === 'signed' || mode === 'offline') && !document.getElementById('privateKeyFile').files[0]) {
+      alert('Selecione a chave privada (.pem) para este modo.');
+      return;
+    }
+
+    const privateKeyPem = mode !== 'unsigned' ? await document.getElementById('privateKeyFile').files[0].text() : null;
+
+    setLoading(true);
+    const resultBox = document.getElementById('storeResult');
+    const csvArea = document.getElementById('csvDownloadArea');
+    resultBox.classList.add('hidden');
+    resultBox.textContent = '';
+    csvArea.innerHTML = '';
+    
+    function pauseTimer() {
+      pauseStart = performance.now();
+    }
+
+    function resumeTimer() {
+      pausedMs += performance.now() - pauseStart;
+    }
+
+    function getElapsed(start) {
+      return performance.now() - start - pausedMs;
+    }
+
+    try {
+      if (loopEnabled && loopCount > 1) {
+        // ============= MODO LOOP (BENCHMARK) =============
+        const allResults = [];
+        let successes = 0, failures = 0;
+
+        for (let i = 0; i < loopCount; i++) {
+          const key = `${keyBase}_${i}`;
+          const message = valueBase ? `${valueBase} #${i} - ${Date.now()}` : `Teste #${i} - ${Date.now()}`;
+
+          let pausedTime = 0;
+          let pauseStart = 0;
+          let frontendMs = 0;
+
+          const iterStart = performance.now();
+
+          let preparedData = null;
+          try {
+            if (mode === 'signed') {
+              preparedData = { signatureB64: await signMessageDER(message, privateKeyPem) };
+            } else if (mode === 'offline') {
+              preparedData = { args: [key, message] };
+            }
+          } catch (e) {
+            failures++;
+            console.error(`Iteração ${i}: erro na preparação`, e);
+            continue;
+          }
+
+          try {
+            let result;
+            if (mode === 'unsigned') {
+              frontendMs = parseFloat((performance.now()-iterStart-pausedTime).toFixed(3));
+              result = await fetchWithAuth('/store', {
+                method: 'POST',
+                body: JSON.stringify({ key, value: message, mode: 'unsigned' })
+              });
+            } else if (mode === 'signed') {
+              frontendMs = parseFloat((performance.now()-iterStart-pausedTime).toFixed(3));
+              result = await fetchWithAuth('/store', {
+                method: 'POST',
+                body: JSON.stringify({ key, value: message, signature: preparedData.signatureB64, mode: 'signed' })
+              });
+            } else if (mode === 'offline') {
+              const args = preparedData.args;
+
+              pauseStart = performance.now();
+              const step1 = await fetchWithAuth('/transaction/offline/init', {
+                method: 'POST',
+                body: JSON.stringify({ fcn: 'Store', args })
+              });
+
+              pausedTime += performance.now() - pauseStart;
+
+              const { txId } = step1;
+
+              let digest = base64ToUint8Array(step1.proposalDigest);
+              let signature = await signDigest(digest, privateKeyPem);
+
+              pauseStart = performance.now();
+
+              const step2 = await fetchWithAuth('/transaction/offline/sign-proposal', {
+                method: 'POST',
+                body: JSON.stringify({ txId, proposalSig: Array.from(signature) })
+              });
+              pausedTime += performance.now() - pauseStart;
+
+              digest = base64ToUint8Array(step2.transactionDigest);
+              signature = await signDigest(digest, privateKeyPem);
+              
+              pauseStart = performance.now();
+
+              const step3 = await fetchWithAuth('/transaction/offline/sign-transaction', {
+                method: 'POST',
+                body: JSON.stringify({ txId, transactionSig: Array.from(signature) })
+              });
+
+              pausedTime += performance.now() - pauseStart;
+
+              digest = base64ToUint8Array(step3.commitDigest);
+              signature = await signDigest(digest, privateKeyPem);
+              
+              frontendMs = parseFloat((performance.now()-iterStart-pausedTime).toFixed(3));
+              result = await fetchWithAuth('/transaction/offline/finalize', {
+                method: 'POST',
+                body: JSON.stringify({ txId, commitSig: Array.from(signature) })
+              });
+            }
+            
+
+
+            const chaincodeMs = result?.elapsed_ms || 0;
+            const backendMs = result?.backend_overhead_ms || 0;
+            const totalMs = parseFloat((frontendMs + backendMs + chaincodeMs).toFixed(3));
+            successes++;
+            allResults.push({
+              iteracao: i,
+              frontend_ms: frontendMs,
+              backend_ms: backendMs,
+              chaincode_ms: chaincodeMs,
+              total_ms: totalMs
+            });
+            console.log(`[${i}] frontend=${frontendMs}ms, backend=${backendMs}ms, chaincode=${chaincodeMs}ms, total=${totalMs}ms`);
+          } catch (e) {
+            failures++;
+            console.error(`Iteração ${i}: erro na transação`, e);
+          }
+        }
+
+        if (allResults.length > 0) {
+          resultBox.textContent = `Loop concluído.\nSucesso: ${successes}\nFalhas: ${failures}`;
+          const btn = document.createElement('button');
+          btn.textContent = 'Baixar CSV';
+          btn.onclick = () => downloadCSV(allResults, mode);
+          csvArea.appendChild(btn);
+        } else {
+          resultBox.textContent = 'Nenhuma iteração bem-sucedida.';
+        }
+      } else {
+        // ============= EXECUÇÃO ÚNICA =============
+        const message = valueBase || `Teste único - ${Date.now()}`;
+        let result;
+        if (mode === 'unsigned') {
+          result = await fetchWithAuth('/store', {
+            method: 'POST',
+            body: JSON.stringify({ key: keyBase, value: message, mode: 'unsigned' })
+          });
+        } else if (mode === 'signed') {
+          const signatureB64 = await signMessageDER(message, privateKeyPem);
+          result = await fetchWithAuth('/store', {
+            method: 'POST',
+            body: JSON.stringify({ key: keyBase, value: message, signature: signatureB64, mode: 'signed' })
+          });
+        } else if (mode === 'offline') {
+          const args = [keyBase, message];
+          const step1 = await fetchWithAuth('/transaction/offline/init', {
+            method: 'POST',
+            body: JSON.stringify({ fcn: 'Store', args })
+          });
+          const { txId } = step1;
+
+          let digest = base64ToUint8Array(step1.proposalDigest);
+          let signature = await signDigest(digest, privateKeyPem);
+          const step2 = await fetchWithAuth('/transaction/offline/sign-proposal', {
+            method: 'POST',
+            body: JSON.stringify({ txId, proposalSig: Array.from(signature) })
+          });
+
+          digest = base64ToUint8Array(step2.transactionDigest);
+          signature = await signDigest(digest, privateKeyPem);
+          const step3 = await fetchWithAuth('/transaction/offline/sign-transaction', {
+            method: 'POST',
+            body: JSON.stringify({ txId, transactionSig: Array.from(signature) })
+          });
+
+          digest = base64ToUint8Array(step3.commitDigest);
+          signature = await signDigest(digest, privateKeyPem);
+          result = await fetchWithAuth('/transaction/offline/finalize', {
+            method: 'POST',
+            body: JSON.stringify({ txId, commitSig: Array.from(signature) })
+          });
+        }
+        resultBox.textContent = `Operação concluída com sucesso.\n${JSON.stringify(result, null, 2)}`;
+      }
+    } catch (err) {
+      resultBox.textContent = `Erro: ${err.message}`;
+    } finally {
+      setLoading(false);
+      resultBox.classList.remove('hidden');
+    }
+  }
+
+  async function fetchWithAuth(url, options = {}) {
+    if (!checkAuth()) throw new Error('Não autenticado');
+    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` };
+    const res = await fetch(url, { ...options, headers: { ...headers, ...options.headers } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Erro na requisição');
+    return data;
+  }
+
+  // ---------- Armazenar Chave Pública ----------
+  window.handleStorePubKey = async function () {
+    const file = document.getElementById('pubKeyFile').files[0];
+    if (!file) { alert('Selecione o arquivo da chave pública.'); return; }
+
+    setLoading(true);
+    try {
+      const pubKeyPEM = await file.text();
+      if (!pubKeyPEM.includes('-----BEGIN PUBLIC KEY-----')) throw new Error('Arquivo não é uma chave pública PEM válida.');
+      await fetchWithAuth('/store-pubkey', { method: 'POST', body: JSON.stringify({ pubKeyPEM }) });
+      const resultBox = document.getElementById('storePubKeyResult');
+      resultBox.textContent = 'Chave pública armazenada com sucesso.';
+      resultBox.classList.remove('hidden');
+    } catch (err) {
+      alert('Erro: ' + err.message);
+    } finally { setLoading(false); }
+  };
+
+  document.getElementById('loopEnabled').addEventListener('change', function() {
+    document.getElementById('loopCount').disabled = !this.checked;
+  });
+
+  // Expor funções
+  window.viewStoredPublicKey = viewStoredPublicKey;
+  window.testSignature = testSignature;
+  window.handleExecute = handleExecute;
+  window.enableTiming = enableTiming;
+  window.disableTiming = disableTiming;
+  window.clearResult = function () {
+    document.getElementById('storeResult').classList.add('hidden');
+    document.getElementById('csvDownloadArea').innerHTML = '';
+  };
+</script>
+</body>
+</html>

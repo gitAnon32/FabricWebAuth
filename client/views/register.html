@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Registro - Chaincode de Teste</title>
+  <style>
+    :root {
+      --primary: #1e7a35;
+      --primary-dark: #145427;
+      --bg: #f4fbf6;
+      --card: #ffffff;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, sans-serif;
+      background: var(--bg);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+    .form-container {
+      background: var(--card);
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 420px;
+      text-align: center;
+    }
+    .form-container h1 {
+      margin-bottom: 20px;
+      font-size: 24px;
+      color: var(--primary-dark);
+    }
+    .form-group {
+      margin-bottom: 16px;
+      text-align: left;
+    }
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      font-size: 0.9rem;
+    }
+    .form-group input[type="text"],
+    .form-group input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-family: inherit;
+    }
+    .button-group {
+      margin-top: 20px;
+    }
+    .button-group button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      background-color: var(--primary);
+      color: white;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .button-group button:hover { background-color: var(--primary-dark); }
+    .button-group button:disabled { background: #aaa; cursor: not-allowed; }
+    .links {
+      margin-top: 18px;
+      font-size: 0.9rem;
+    }
+    .links a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    .links a:hover { text-decoration: underline; }
+    .error-message {
+      color: #c00;
+      font-size: 0.85rem;
+      margin-top: 6px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="form-container">
+    <h1>Registrar Usuário</h1>
+
+    <div class="form-group">
+      <label for="username">Nome de Usuário</label>
+      <input type="text" id="username" placeholder="Seu username" required>
+    </div>
+
+    <div class="form-group">
+      <label for="privateKeyFile">Chave Privada EC (.pem)</label>
+      <input type="file" id="privateKeyFile" accept=".pem" required>
+    </div>
+
+    <div class="button-group">
+      <button id="registerBtn">Registrar</button>
+    </div>
+
+    <div class="error-message" id="errorMessage"></div>
+
+    <div class="links">
+      <p>Já possui registro? <a href="/login">Faça login</a></p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsrsasign@10.5.25/lib/jsrsasign-all-min.js"></script>
+  <script>
+    // Organização fixa (pré‑definida)
+    const ORG = 'org1.example.com';
+
+    document.getElementById('registerBtn').addEventListener('click', async () => {
+      const username = document.getElementById('username').value.trim();
+      const fileInput = document.getElementById('privateKeyFile');
+      const errorDiv = document.getElementById('errorMessage');
+      errorDiv.style.display = 'none';
+
+      if (!username) {
+        errorDiv.textContent = 'Informe o nome de usuário.';
+        errorDiv.style.display = 'block';
+        return;
+      }
+      if (!fileInput.files[0]) {
+        errorDiv.textContent = 'Selecione o arquivo da chave privada (.pem).';
+        errorDiv.style.display = 'block';
+        return;
+      }
+
+      const btn = document.getElementById('registerBtn');
+      btn.disabled = true;
+      btn.textContent = 'Gerando CSR e registrando...';
+
+      try {
+        const pem = await fileInput.files[0].text();
+        if (!pem.includes('PRIVATE KEY')) {
+          throw new Error('Arquivo não parece ser uma chave privada PEM.');
+        }
+
+        // Converte PEM para objeto de chave privada
+        const prvKeyObj = KEYUTIL.getKey(pem);
+        if (prvKeyObj.type !== 'EC' || prvKeyObj.curveName !== 'secp256r1') {
+          throw new Error('A chave deve ser EC prime256v1 (secp256r1).');
+        }
+
+        // Obtém a chave pública correspondente
+        const pubKeyObj = KEYUTIL.getKey(prvKeyObj);
+
+        // Cria o CSR com organização fixa
+        const csr = new KJUR.asn1.csr.CertificationRequest({
+          subject: { str: `/CN=${username}/O=${ORG}` },
+          sbjpubkey: pubKeyObj,
+          sigalg: 'SHA256withECDSA',
+          sbjprvkey: prvKeyObj
+        });
+        const csrPEM = csr.getPEM();
+
+        // Cria um Blob para enviar como arquivo
+        const csrBlob = new Blob([csrPEM], { type: 'application/x-pem-file' });
+
+        // Prepara FormData
+        const formData = new FormData();
+        formData.append('username', username);
+        formData.append('csr', csrBlob, `${username}.csr`);
+
+        // Envia para o servidor
+        const response = await fetch('/auth/register', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          alert('Usuário registrado com sucesso!');
+          window.location.href = '/login';
+        } else {
+          throw new Error(data.message || 'Falha ao registrar usuário.');
+        }
+      } catch (error) {
+        console.error('Erro no registro:', error);
+        errorDiv.textContent = error.message;
+        errorDiv.style.display = 'block';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Registrar';
+      }
+    });
+  </script>
+</body>
+</html>
